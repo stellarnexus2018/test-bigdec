@@ -1,0 +1,7 @@
+service:
+  name: test-bigdec
+  versions: 0.0.1
+
+logging:
+  level:
+    ru.master.service: TRACE
