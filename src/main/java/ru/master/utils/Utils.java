@@ -54,6 +54,27 @@ public class Utils {
   }
 
   /**
+   * Вычисление признака не равенства проверяемого значения эквиваленту null или 0 - для BigDecimal
+   * @param _comparing_val Проверяемое значение
+   * @return Результат проверки (=true - если не null и не равно 0)
+   */
+  public static boolean isNonNullNonZeroBigDecimal(BigDecimal _comparing_val) {
+    if (_comparing_val == null) return false;
+    return (BigDecimal.ZERO.compareTo(_comparing_val) != 0);
+  }
+
+  /**
+   * Вычисление признака не равенства проверяемого значения эквиваленту null,
+   * но равенства 0 - для BigDecimal
+   * @param _comparing_val Проверяемое значение
+   * @return Результат проверки (=true - если не null и равно 0)
+   */
+  public static boolean isNonNullButZeroBigDecimal(BigDecimal _comparing_val) {
+    if (_comparing_val == null) return false;
+    return (BigDecimal.ZERO.compareTo(_comparing_val) == 0);
+  }
+
+  /**
    * Вычисление признака равенства двух параметров BigDecimal
    * @param _comparing_val1 Проверяемое значение
    * @param _comparing_val2 Проверяемое значение

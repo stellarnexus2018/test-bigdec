@@ -12,6 +12,7 @@ import java.time.temporal.ChronoUnit;
 @Slf4j
 public class FormulaeService {
   PropContainer pc = new PropContainer();
+
   // region Доходность MWR
 
   /**
@@ -31,7 +32,7 @@ public class FormulaeService {
   public BigDecimal getMwrYield(String      _calc_prot_id,
                                 Long        _urgency,
                                 BigDecimal  _z_factor,
-                                LocalDate _calc_date,
+                                LocalDate   _calc_date,
                                 LocalDate   _insurance_start_date,
                                 BigDecimal  _guarantee_rate,
                                 BigDecimal  _insurance_prem_rub,
@@ -63,39 +64,62 @@ public class FormulaeService {
 
     // Контрольные проверки (отработка сценария возможного деления на 0 фиксируем в логах)
     if (_urgency == null || Utils.isZeroLong(_urgency)) {
-      log.info("UID:{} (getMwrYield) Полис ID: {} Срочность = {}",
+      log.error("UID:{} (getMwrYield) Полис ID: {} Срочность не должна быть: {}",
           _calc_prot_id, _policy_id, _urgency);
       return Utils.getBigDecimalZero();
     }
 
     BigDecimal P0 = null;
-    if (_insurance_prem_rub != null && Utils.isNonZeroBigDecimal(_insurance_prem_rub)
-        && _insurance_prem_nonrub != null && Utils.isNonZeroBigDecimal(_insurance_prem_nonrub)) {
-      log.info("UID:{} (getMwrYield) Полис ID: {} сценарий проверки страховых премий, _insurance_prem_rub:{}, _insurance_prem_nonrub:{}",
+    if (Utils.isNonNullNonZeroBigDecimal(_insurance_prem_rub) && Utils.isNonNullNonZeroBigDecimal(_insurance_prem_nonrub)) {
+      log.error("UID:{} (getMwrYield) Полис ID: {} сценарий проверки страховых премий => все > 0, _insurance_prem_rub:{}, _insurance_prem_nonrub:{}",
+          _calc_prot_id, _policy_id, _insurance_prem_rub, _insurance_prem_nonrub);
+
+      return Utils.getBigDecimalZero();
+    } else if (Utils.isNonNullButZeroBigDecimal(_insurance_prem_rub)&&Utils.isNonNullButZeroBigDecimal(_insurance_prem_nonrub)) {
+      log.error("UID:{} (getMwrYield) Полис ID: {} сценарий проверки страховых премий => все = 0, _insurance_prem_rub:{}, _insurance_prem_nonrub:{}",
+          _calc_prot_id, _policy_id, _insurance_prem_rub, _insurance_prem_nonrub);
+
+      return Utils.getBigDecimalZero();
+    } else if (Utils.isNonNullNonZeroBigDecimal(_insurance_prem_rub)) {
+      P0 = _insurance_prem_rub;
+    } else if (Utils.isNonNullNonZeroBigDecimal(_insurance_prem_nonrub)) {
+      P0 = _insurance_prem_nonrub;
+    } else if (_insurance_prem_rub == null && _insurance_prem_nonrub == null) {
+      log.error("UID:{} (getMwrYield) Полис ID: {} все значения возможных страховых премий == null", _calc_prot_id, _policy_id);
+
+      return Utils.getBigDecimalZero();
+    } else if (_insurance_prem_rub == null && Utils.isNonNullButZeroBigDecimal(_insurance_prem_nonrub)
+    || _insurance_prem_nonrub == null && Utils.isNonNullButZeroBigDecimal(_insurance_prem_rub)) {
+      log.error("UID:{} (getMwrYield) Полис ID: {} сбойный сценарий потенциального деления на 0: _insurance_prem_rub:{}, _insurance_prem_nonrub:{}",
           _calc_prot_id, _policy_id, _insurance_prem_rub, _insurance_prem_nonrub);
       return Utils.getBigDecimalZero();
-    } else if (_insurance_prem_rub != null && Utils.isNonZeroBigDecimal(_insurance_prem_rub)) {
-      P0 = _insurance_prem_rub;
-    } else if (_insurance_prem_nonrub != null && Utils.isNonZeroBigDecimal(_insurance_prem_nonrub)) {
-      P0 = _insurance_prem_nonrub;
     }
 
-    log.info("UID:{} (getMwrYield) Полис ID: {} P0: {}",
-        _calc_prot_id, _policy_id, P0);
+    log.info("UID:{} (getMwrYield) Полис ID: {} P0: {}", _calc_prot_id, _policy_id, P0);
 
     // Средневзвешенный денежный поток ((T-t0)/365*P0)
     double days_between = Math.abs(ChronoUnit
         .DAYS
         .between(_calc_date, _insurance_start_date));
 
-    log.info("UID:{} (getMwrYield) Полис ID: {} (T-t0): {}",
-        _calc_prot_id, _policy_id, days_between);
+    log.info("UID:{} (getMwrYield) Полис ID: {} (T-t0): {}", _calc_prot_id, _policy_id, days_between);
 
     BigDecimal weighted_average_cash_flow =
-        BigDecimal.valueOf(days_between).divide((BigDecimal.valueOf(365).multiply(P0)), pc.getScaleBigDecForValue(), RoundingMode.HALF_UP);
+        BigDecimal.valueOf(days_between)
+            .divide((BigDecimal.valueOf(365)
+                .multiply(P0)), pc.getScaleBigDecForValue(), RoundingMode.HALF_UP);
 
     log.info("UID:{} (getMwrYield) Полис ID: {} ((T-t0)/365*P0) => ({}/365*{}) Средневзвешенный денежный поток: {}",
         _calc_prot_id, _policy_id, days_between, P0, weighted_average_cash_flow);
+
+    if (Utils.isZeroBigDecimal(weighted_average_cash_flow)) {
+      log.error("UID:{} (getMwrYield) Полис ID: {} Ошибка, сценарий деления на 0 => Средневзвешенный денежный поток = 0",
+          _calc_prot_id, _policy_id);
+
+      return Utils.getBigDecimalZero();
+    }
+
+    BigDecimal guarantee_rate_ready = _guarantee_rate.divide(Utils.getBigDecimal100(), pc.getScaleBigDecForValue(), RoundingMode.HALF_UP);
 
     // ("Доходность в денежном эквиваленте" / "Средневзвешенный денежный поток") - Z
     BigDecimal part1 = _profitability
@@ -103,7 +127,7 @@ public class FormulaeService {
         .subtract(_z_factor);
 
     // ("Уровень гарантии" - 1)/S
-    BigDecimal part2 = (_guarantee_rate.subtract(Utils.getBigDecimalOne()))
+    BigDecimal part2 = (guarantee_rate_ready.subtract(Utils.getBigDecimalOne()))
         .divide(BigDecimal.valueOf(_urgency), pc.getScaleBigDecForValue(), RoundingMode.HALF_UP);
 
     BigDecimal result = (Utils.isGreaterZeroBigDecimal(part1) ? part1 : Utils.getBigDecimalZero())
@@ -112,7 +136,7 @@ public class FormulaeService {
     log.info("UID:{} (getMwrYield) Полис ID: {} (Доходность_в_денежном_эквиваленте/Средневзвешенный_денежный_поток)-Z:({}/{})-{} = {}",
         _calc_prot_id, _policy_id, _profitability, weighted_average_cash_flow, _z_factor, part1);
     log.info("UID:{} (getMwrYield) Полис ID: {} (уровень_гарантии-1)/S: ({}-1)/{} = {}",
-        _calc_prot_id, _policy_id, _guarantee_rate, _urgency, part2);
+        _calc_prot_id, _policy_id, guarantee_rate_ready, _urgency, part2);
     log.info("UID:{} (getMwrYield) Полис ID: {} result: {}", _calc_prot_id, _policy_id, result);
 
     return result;
